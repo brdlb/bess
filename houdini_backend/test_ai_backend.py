@@ -5,9 +5,9 @@ import threading
 import time
 
 # Note: In a real environment, this test script would run outside Houdini,
-# and communicate with the Houdini instance running `hwebserver.py`.
+# and communicate with the Houdini instance running `ai_backend.py`.
 # For testing locally without Houdini, we can start the server in a thread 
-# and mock `hou` behavior mildly, but `hwebserver.py` expects `hou` to be present.
+# and mock `hou` behavior mildly, but `ai_backend.py` expects `hou` to be present.
 
 class TestHoudiniBackend(unittest.TestCase):
     BASE_URL = "http://localhost:9000"
@@ -20,7 +20,7 @@ class TestHoudiniBackend(unittest.TestCase):
             data = response.json()
             self.assertTrue(data.get("alive"))
         except requests.exceptions.ConnectionError:
-            self.fail("Server is not running. Please start hwebserver.py inside Houdini first.")
+            self.fail("Server is not running. Please start ai_backend.py inside Houdini first.")
 
     def test_execute_endpoint(self):
         """Test code execution via /execute"""

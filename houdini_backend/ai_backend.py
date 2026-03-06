@@ -11,6 +11,7 @@ import threading
 import json
 import traceback
 import asyncio
+from urllib.parse import urlparse, parse_qs
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 try:
@@ -104,23 +105,42 @@ class HouHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_GET(self):
-        if self.path == '/health':
+        parsed_path = urlparse(self.path)
+        if parsed_path.path == '/health':
             self._send({"alive": True, "houdini_available": hou is not None})
             
-        elif self.path == '/scene':
-            # Basic scene inspection for /obj context as a MVP
+        elif parsed_path.path == '/scene':
+            query_params = parse_qs(parsed_path.query)
+            scene_path = query_params.get('path', ['/obj'])[0]
+            try:
+                max_depth = int(query_params.get('max_depth', ['3'])[0])
+            except ValueError:
+                max_depth = 3
+
             try:
                 if hou:
-                    obj_node = hou.node('/obj')
-                    # Collect node info: name and type
+                    root_node = hou.node(scene_path)
+                    if not root_node:
+                        self._send({"status": "error", "error": f"Node not found: {scene_path}"})
+                        return
+
+                    def get_node_info(node, current_depth, max_depth):
+                        info = {
+                            "name": node.name(),
+                            "path": node.path(),
+                            "type": node.type().name()
+                        }
+                        if current_depth < max_depth:
+                            children = node.children()
+                            if children:
+                                info["children"] = [get_node_info(c, current_depth + 1, max_depth) for c in children]
+                        return info
+
                     nodes_data = []
-                    for n in obj_node.children():
-                        nodes_data.append({
-                            "name": n.name(),
-                            "path": n.path(),
-                            "type": n.type().name()
-                        })
-                    data = {"context": "/obj", "nodes": nodes_data}
+                    for n in root_node.children():
+                        nodes_data.append(get_node_info(n, 1, max_depth))
+                        
+                    data = {"context": scene_path, "nodes": nodes_data}
                 else:
                     data = {"error": "Houdini environment not found"}
                     

@@ -25,7 +25,7 @@ The decision-making core of the system, powered by **Python, FastAPI, and LangGr
 - Creates Python payloads.
 
 ### 3. Houdini Backend (`/houdini_backend`)
-A lightweight web server interface (`hwebserver.py`) running as a background service directly inside the Houdini environment. It receives programmatic instructions from the Agent Orchestrator, safely executes the Python code within the Houdini context, and streams the results back to the agent.
+A lightweight web server interface (`ai_backend.py`) running as a background service directly inside the Houdini environment. It receives programmatic instructions from the Agent Orchestrator, safely executes the Python code within the Houdini context, and streams the results back to the agent.
 
 ## Getting Started
 
@@ -38,7 +38,7 @@ A lightweight web server interface (`hwebserver.py`) running as a background ser
 
 1. **Start the Houdini Backend**
    - Open your Houdini instance.
-   - Run the script `houdini_backend/hwebserver.py` inside the Houdini Python shell (or as a shelf tool) to start listening for incoming connections.
+   - Run the script `houdini_backend/ai_backend.py` inside the Houdini Python shell (or as a shelf tool) to start listening for incoming connections.
 
 2. **Start the Agent Orchestrator**
    - Navigate to the `agent_orchestrator` directory.

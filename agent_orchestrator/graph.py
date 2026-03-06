@@ -44,10 +44,10 @@ def houdini_execute(code: str) -> dict:
         return {"status": "error", "error": f"Failed to connect to Houdini: {e}"}
 
 @tool
-def houdini_get_scene(path: str = '/obj') -> dict:
-    """Gets the current node graph structure in Houdini."""
+def houdini_get_scene(path: str = '/obj', max_depth: int = 3) -> dict:
+    """Gets the current node graph structure in Houdini, traversing up to max_depth."""
     try:
-        response = requests.get(f"http://localhost:9000/scene", timeout=5)
+        response = requests.get(f"http://localhost:9000/scene", params={"path": path, "max_depth": max_depth}, timeout=10)
         return response.json()
     except Exception as e:
          return {"status": "error", "error": f"Failed to connect: {e}"}
