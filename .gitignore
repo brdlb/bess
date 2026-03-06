@@ -1,0 +1,44 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+**/venv/
+.env
+**/.env
+**/.env.*
+.venv
+env/
+ENV/
+
+# Node.js
+**/node_modules/
+**/.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+.pnp
+.pnp.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Houdini
+backup/
+*.hipnc.bak*
+*.hiplc.bak*
+*.hip.bak*
