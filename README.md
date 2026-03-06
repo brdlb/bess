@@ -63,5 +63,37 @@ A lightweight web server interface (`ai_backend.py`) running as a background ser
      npm run dev
      ```
 
+## Vector Database & RAG Setup
+
+The assistant uses **Chroma DB** to store and retrieve Houdini documentation for RAG (Retrieval-Augmented Generation).
+
+> [!TIP]
+> By default, the system uses a local sentence-transformers model for embeddings. If an `OPENAI_API_KEY` is provided in the `.env` file, it will use OpenAI's `text-embedding-3-small` for better performance.
+
+### 1. Prepare Houdini Help Files
+Ensure you have Houdini installed. The system indexes documentation from the following ZIP files usually located in:
+`C:/Program Files/Side Effects Software/Houdini <version>/houdini/help/`
+
+*   `nodes.zip`
+*   `hom.zip`
+*   `vex.zip`
+*   `basics.zip`
+
+### 2. Configure Indexer
+Open `agent_orchestrator/reindex_all.py` and update the `HOUDINI_HELP_DIR` variable to point to your Houdini installation's help directory.
+
+### 3. Run Reindexing
+Run the following command from the `agent_orchestrator` directory (make sure your virtual environment is active):
+```bash
+python reindex_all.py
+```
+This will remove any existing `chroma_db` folder and create a fresh index.
+
+### 4. Verify the Database
+You can test if the database was populated correctly by running:
+```bash
+python test_chroma_db.py
+```
+
 ## Extensibility
 This system is built from the ground up for modularity. Adding new agent functionalities, refining vector representations, adding custom UI components, or upgrading the underlying model can be achieved independently.
