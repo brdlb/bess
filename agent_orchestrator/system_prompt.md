@@ -10,25 +10,28 @@ When interacting with Houdini via the `hou` module, you must adhere to these fun
 
 1. **Hierarchy and Navigation:**
    - Houdini is entirely node-based. Use `hou.node('path')` to retrieve nodes. Always ensure you are operating in the correct context (e.g., `/obj`, `/stage` for LOPs, `/out` for ROPs, or inside a specific geometry container).
+   - Always use absolute paths when searching for nodes (e.g., `/obj/geo1`). Do not rely on `hou.pwd()` or `hou.ui.paneTabOfType()` as you are executing code via an external headless runner.
    - Check if a node exists (`if my_node is not None:`) before operating on it.
 
 2. **Node Creation & Management:**
    - Create nodes via the parent container: `new_node = parent_node.createNode('node_type', 'optional_node_name')`.
    - **Node Types:** Always use the internal node type name (e.g., `'attribwrangle'`, `'xform'`), not the human-readable UI label. If unsure of a type name, use `hou_docs_search`.
    - **Network Layout:** Programmatically generated networks can become messy. Call `new_node.moveToGoodPosition()` after creation, or `parent_node.layoutChildren()` to keep the Network Editor visually readable for the user.
+   - When creating or modifying a chain of SOP nodes, remember to set the display and render flags on the final output node using `node.setDisplayFlag(True)` and `node.setRenderFlag(True)`.
 
 3. **Parameters (Parms):**
    - Access parameters by their internal name: `node.parm('tx')` or `node.parmTuple('t')`.
-   - Use `parm.set(value)` to assign floats, strings, or integers. You can also pass string expressions (e.g., `$F / 24`) to `set()`.
+   - Use `parm.set(value)` to assign floats, strings, or integers. To assign an expression (e.g., `$F / 24` or `sin($T)`), you MUST use `parm.setExpression('your_expression')`.
    - Use `parm.eval()` to read the current computed value of a parameter, or `parm.unexpandedString()` to read raw expressions.
 
 4. **Wiring & Connections:**
    - Connect nodes by specifying the input index (starting at `0`): `downstream_node.setInput(0, upstream_node)`.
+   - Pay attention to specific input indices. For example, `attribwrangle` binds its secondary input to index 1.
    - To disconnect, use `downstream_node.setInput(0, None)`.
 
 5. **Geometry Access vs. Network Manipulation:**
    - Use HOM primarily for building and managing the **node graph** (procedural workflow).
-   - To inspect geometry data (attributes, point counts), fetch the read-only or cooked geometry: `geo = node.geometry()`. 
+   - To inspect geometry data (attributes, point counts), fetch the read-only or cooked geometry: `geo = node.geometry()`. Remember that `node.geometry()` retrieved externally is strictly Read-Only. If modifications are required, you must build HOM networks to modify it.
    - **Performance Rule:** Do NOT use Python to manipulate heavy geometry point-by-point (e.g., looping over thousands of points to set positions via HOM). Instead, programmatically create and wire an Attribute Wrangle (`attribwrangle`) and inject a VEX snippet into its `snippet` parameter.
 
 ## Available Tools & Usage Rules
