@@ -1,14 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, Loader2, Wrench, CheckCircle2, AlertCircle } from "lucide-react";
+import { Send, Loader2, Wrench, CheckCircle2, AlertCircle, ChevronDown, ChevronRight, Terminal } from "lucide-react";
 
 type Message = {
     id: string;
     role: "user" | "assistant" | "system";
     content: string;
     isStreaming?: boolean;
-    toolCalls?: { name: string; input?: any; output?: string }[];
+    toolName?: string;
+    toolInput?: any;
+    toolOutput?: string;
+    isFinished?: boolean;
+    isExpanded?: boolean;
 };
 
 export default function Chat() {
@@ -68,21 +72,41 @@ export default function Chat() {
                 // Display tool usage
                 setMessages((prev) => {
                     currentAssistantMessageId = null; // End current text stream
-                    return [
-                        ...prev,
-                        {
-                            id: Date.now().toString(),
-                            role: "system",
-                            content: `Executing tool: ${data.tool}...`
-                        }
-                    ]
+                    const msgs = [...prev];
+
+                    if (data.tool === "ask_user" && data.input && typeof data.input.question === "string") {
+                        msgs.push({
+                            id: Date.now().toString() + "-question",
+                            role: "assistant",
+                            content: `**Question:** ${data.input.question}`
+                        });
+                    }
+
+                    msgs.push({
+                        id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        role: "system",
+                        content: `Executing tool: ${data.tool}...`,
+                        toolName: data.tool,
+                        toolInput: data.input,
+                        isFinished: false,
+                        isExpanded: false
+                    });
+                    return msgs;
                 });
             } else if (data.type === "tool_end") {
                 setMessages((prev) => {
                     const msgs = [...prev];
-                    const lastMsg = msgs[msgs.length - 1];
-                    if (lastMsg.role === "system") {
-                        lastMsg.content = `Finished: ${data.tool}`;
+                    // Find the last system message that matches this tool and is not finished
+                    for (let i = msgs.length - 1; i >= 0; i--) {
+                        if (msgs[i].role === "system" && msgs[i].toolName === data.tool && !msgs[i].isFinished) {
+                            msgs[i] = {
+                                ...msgs[i],
+                                content: `Finished: ${data.tool}`,
+                                toolOutput: data.output,
+                                isFinished: true
+                            };
+                            break;
+                        }
                     }
                     currentAssistantMessageId = null; // Ensure new text gets new bubble
                     return msgs;
@@ -116,7 +140,7 @@ export default function Chat() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-stone-900 border-r border-stone-800">
+        <div className="flex flex-col h-full bg-stone-900">
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {messages.map((msg) => (
                     <div
@@ -124,15 +148,59 @@ export default function Chat() {
                         className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                         {msg.role === "system" ? (
-                            <div className="flex items-center gap-2 text-xs font-mono text-emerald-500 bg-emerald-500/10 px-3 py-2 rounded-lg border border-emerald-500/20 max-w-[80%]">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                {msg.content}
+                            <div
+                                className={`flex flex-col gap-2 text-xs font-mono max-w-[90%] transition-all duration-300 ${msg.isFinished
+                                    ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/20 cursor-pointer hover:bg-emerald-500/10"
+                                    : "text-amber-500 bg-amber-500/5 border-amber-500/20"
+                                    } px-3 py-2.5 rounded-xl border shadow-sm group`}
+                                onClick={() => {
+                                    if (msg.isFinished) {
+                                        setMessages(prev => prev.map(m =>
+                                            m.id === msg.id ? { ...m, isExpanded: !m.isExpanded } : m
+                                        ));
+                                    }
+                                }}
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    {msg.isFinished ? (
+                                        <Wrench className="w-3.5 h-3.5" />
+                                    ) : (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    )}
+                                    <span className="flex-1 font-semibold">{msg.content}</span>
+                                    {msg.isFinished && (
+                                        <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                                            {msg.isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {msg.isExpanded && msg.toolOutput && (
+                                    <div className="mt-2 pt-2 border-t border-emerald-500/10 space-y-2 overflow-hidden">
+                                        {msg.toolInput && (
+                                            <div className="p-2 bg-black/20 rounded-md overflow-x-auto">
+                                                <div className="text-[10px] text-emerald-500/50 mb-1 uppercase tracking-wider font-bold">Input</div>
+                                                <pre className="text-[11px] whitespace-pre-wrap text-emerald-300/70">
+                                                    {typeof msg.toolInput === 'string' ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)}
+                                                </pre>
+                                            </div>
+                                        )}
+                                        <div className="p-2 bg-black/40 rounded-md overflow-x-auto">
+                                            <div className="text-[10px] text-emerald-500/50 mb-1 uppercase tracking-wider font-bold inline-flex items-center gap-1">
+                                                <Terminal className="w-2.5 h-2.5" /> Result
+                                            </div>
+                                            <pre className="text-[11px] whitespace-pre-wrap text-emerald-200">
+                                                {msg.toolOutput}
+                                            </pre>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div
                                 className={`max-w-[80%] rounded-2xl px-5 py-3.5 shadow-sm text-sm ${msg.role === "user"
-                                        ? "bg-orange-600 text-white rounded-br-none"
-                                        : "bg-stone-800 text-stone-200 rounded-bl-none border border-stone-700/50"
+                                    ? "bg-orange-600 text-white rounded-br-none"
+                                    : "bg-stone-800 text-stone-200 rounded-bl-none border border-stone-700/50"
                                     }`}
                             >
                                 <div className="whitespace-pre-wrap">{msg.content}</div>

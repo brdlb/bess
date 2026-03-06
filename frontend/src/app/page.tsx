@@ -1,5 +1,4 @@
 import Chat from '@/components/Chat'
-import HoudiniEvents from '@/components/HoudiniEvents'
 
 export default function Home() {
   return (
@@ -13,14 +12,11 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden p-6 mx-auto w-full max-w-7xl gap-6">
+      <div className="flex flex-1 overflow-hidden p-6 mx-auto w-full max-w-4xl gap-6">
         {/* Main Chat Area */}
         <section className="flex flex-col flex-1 rounded-xl border border-stone-800 bg-stone-950/50 shadow-2xl relative overflow-hidden backdrop-blur-xl">
           <Chat />
         </section>
-
-        {/* Side Panel (Events / Inspect) */}
-        <HoudiniEvents />
       </div>
     </main>
   )

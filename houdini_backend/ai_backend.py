@@ -7,23 +7,37 @@ Execute this script inside the Houdini Python Shell or create a Shelf Tool.
 It creates a non-blocking background thread that listens for HTTP requests from the LangGraph Orchestrator.
 """
 
+import os
 import threading
 import json
 import traceback
 import asyncio
+import logging
 from urllib.parse import urlparse, parse_qs
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Set up logging for the backend
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("houdini_backend")
+
 try:
     import websockets
+    HAS_WEBSOCKETS = True
 except ImportError:
-    print("WARNING: 'websockets' module not found. Run 'pip install websockets' for realtime events.")
+    logger.warning("!!! 'websockets' module not found !!!")
+    logger.warning("To enable realtime events in the frontend, run in Houdini's Python or matching environment:")
+    logger.warning("hython -m pip install websockets")
     websockets = None
+    HAS_WEBSOCKETS = False
+
 
 try:
     import hou
 except ImportError:
-    print("WARNING: 'hou' module not found. Are you running this inside Houdini?")
+    logger.warning("'hou' module not found. Are you running this inside Houdini?")
     hou = None
 
 # Global set of connected websocket clients
@@ -40,7 +54,7 @@ async def ws_handler(websocket, path):
 
 def broadcast_event(event_type, data):
     """Utility to broadcast an event to all connected websocket clients."""
-    if not websockets or not _ws_clients:
+    if not websockets or not _ws_clients or not _ws_loop:
         return
     
     # We need to run the send coroutines in the asyncio event loop
@@ -48,17 +62,15 @@ def broadcast_event(event_type, data):
     
     async def send_all():
         if _ws_clients:
+            # Create a list of send tasks
             await asyncio.gather(*[client.send(message) for client in _ws_clients], return_exceptions=True)
             
-    # If there is a running loop in another thread, we can schedule it:
+    # Send to the background loop from whatever thread we are in
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(send_all(), loop)
-        else:
-             asyncio.run(send_all())
+        if _ws_loop.is_running():
+            asyncio.run_coroutine_threadsafe(send_all(), _ws_loop)
     except Exception as e:
-        print(f"Failed to broadcast WS event: {e}")
+        logger.error(f"Failed to broadcast WS event: {e}")
 
 class HouHandler(BaseHTTPRequestHandler):
     
@@ -74,23 +86,49 @@ class HouHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length))
             
+            logger.info(f"Received /execute request")
+            logger.debug(f"Execution code block: {body.get('code', '')}")
+            
             result_container = {}
             
             # The execution environment allows the LLM to access `hou` and populate `result`
             exec_env = {'hou': hou, 'result': result_container}
             
             try:
+                def run_code():
+                    if hou and hasattr(hou, "undos") and hasattr(hou.undos, "group"):
+                        try:
+                            with hou.undos.group("Agent Execution"):
+                                exec(body.get('code', ''), exec_env)
+                        except Exception as script_err:
+                            # If an error happens, we undo the actions of this script
+                            if hasattr(hou.undos, "performUndo"):
+                                try:
+                                    hou.undos.performUndo()
+                                    logger.info("Actions of failed script successfully undone.")
+                                except Exception as undo_err:
+                                    logger.error(f"Failed to undo actions: {undo_err}")
+                            raise script_err
+                    else:
+                        exec(body.get('code', ''), exec_env)
+
                 # Execute the provided code block
-                exec(body.get('code', ''), exec_env)
+                if hou and hasattr(hou, "executeInMainThreadWithResult"):
+                    # Safer to run Houdini commands in the main thread
+                    hou.executeInMainThreadWithResult(run_code)
+                else:
+                    run_code()
                 
                 response = {
                     'status': 'ok', 
                     'data': result_container
                 }
+                logger.info(f"Execution successful. Result: {result_container}")
                 # Emit success event over websocket
                 broadcast_event('cook_complete', {'status': 'ok'})
                 
             except Exception as e:
+                logger.error(f"Execution failed: {e}", exc_info=True)
                 response = {
                     'status': 'error', 
                     'error': str(e),
@@ -107,7 +145,12 @@ class HouHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path)
         if parsed_path.path == '/health':
-            self._send({"alive": True, "houdini_available": hou is not None})
+            self._send({
+                "alive": True, 
+                "houdini_available": hou is not None,
+                "has_websockets": HAS_WEBSOCKETS
+            })
+
             
         elif parsed_path.path == '/scene':
             query_params = parse_qs(parsed_path.query)
@@ -116,6 +159,8 @@ class HouHandler(BaseHTTPRequestHandler):
                 max_depth = int(query_params.get('max_depth', ['3'])[0])
             except ValueError:
                 max_depth = 3
+
+            logger.info(f"Received /scene request for path: '{scene_path}', max_depth: {max_depth}")
 
             try:
                 if hou:
@@ -170,27 +215,40 @@ _ws_loop = None
 def run_http_server(port=9000):
     global _hou_server
     try:
-        _hou_server = HTTPServer(('localhost', port), HouHandler)
-        print(f"Houdini AI HTTP Backend listening on http://localhost:{port}...")
+        _hou_server = HTTPServer(('127.0.0.1', port), HouHandler)
+        logger.info(f"Houdini AI HTTP Backend listening on http://127.0.0.1:{port}...")
         _hou_server.serve_forever()
+
     except OSError as e:
-        print(f"HTTP Server could not start on port {port}: {e}")
+        logger.error(f"HTTP Server could not start on port {port}: {e}")
 
 def run_ws_server(port=9001):
     if websockets is None:
-        print("Skipping WebSocket server (websockets package not installed).")
+        logger.info("Skipping WebSocket server (websockets package not installed).")
         return
         
     global _ws_loop
     
-    async def main():
-        global _ws_loop
-        _ws_loop = asyncio.get_running_loop()
-        print(f"Houdini AI WebSocket Backend listening on ws://localhost:{port}...")
-        async with websockets.serve(ws_handler, "localhost", port):
-            await asyncio.Future()  # run forever
+    # To bypass Houdini's haio (which enforces main thread), we create 
+    # a standard selector loop specifically for this background thread
+    try:
+        # On Windows, we need the Selector loop for websockets to work reliably in a thread
+        loop = asyncio.SelectorEventLoop()
+        asyncio.set_event_loop(loop)
+        _ws_loop = loop
+        
+        async def main():
+            logger.info(f"Houdini AI WebSocket Backend listening on ws://127.0.0.1:{port}...")
+            async with websockets.serve(ws_handler, "127.0.0.1", port):
+                await asyncio.Future()  # run forever
 
-    asyncio.run(main())
+        loop.run_until_complete(main())
+
+    except Exception as e:
+        logger.error(f"WebSocket server failed: {e}", exc_info=True)
+    finally:
+        if _ws_loop:
+            _ws_loop.close()
 
 def start_server(http_port=9000, ws_port=9001):
     http_thread = threading.Thread(target=run_http_server, args=(http_port,), daemon=True)
@@ -209,9 +267,9 @@ if __name__ == '__main__':
     # keep the main thread alive so the background threads don't exit immediately.
     if hou is None:
         import time
-        print("\nRunning in standalone Test Mode (No Houdini). Press Ctrl+C to stop.")
+        logger.info("Running in standalone Test Mode (No Houdini). Press Ctrl+C to stop.")
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("Server stopped.")
+            logger.info("Server stopped.")
